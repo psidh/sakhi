@@ -2,87 +2,22 @@
 
 import { useEffect, useState } from "react";
 
-/* ======================
-   CONSTANTS
-====================== */
 
-const STORAGE_KEY = "sos_messages";
-
-/* ======================
-   SOS TEMPLATES
-====================== */
-
-const SOS_TEMPLATES = [
-  {
-    label: "Fire Accident",
-    text:
-      "Fire accident reported. There is an active fire causing immediate danger to life and property. Emergency fire services are required urgently.",
-  },
-  {
-    label: "Sexual Assault",
-    text:
-      "Sexual assault emergency. Immediate assistance required. Victim is unsafe and needs urgent police and medical intervention.",
-  },
-  {
-    label: "Natural Disaster",
-    text:
-      "Natural disaster situation detected (flood, earthquake, or cyclone). People may be trapped or injured. Immediate rescue and relief are required.",
-  },
-  {
-    label: "Medical Emergency",
-    text:
-      "Medical emergency reported. The individual requires urgent hospital assistance and immediate ambulance support.",
-  },
-];
-
-/* ======================
-   SERVICES
-====================== */
-
-const Services = {
-  login(mobile, password) {
-    localStorage.setItem("auth", "true");
-    localStorage.setItem(
-      "auth_user",
-      JSON.stringify({ mobile, password })
-    );
-  },
-
-  logout() {
-    localStorage.removeItem("auth");
-    localStorage.removeItem("auth_user");
-  },
-
-  getUser() {
-    return JSON.parse(localStorage.getItem("auth_user"));
-  },
-
-  verify(mobile, password) {
-    const user = JSON.parse(localStorage.getItem("auth_user"));
-    if (!user) return false;
-    return user.mobile === mobile && user.password === password;
-  },
-
-  getLocation() {
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          resolve({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          }),
-        () => reject()
-      );
-    });
-  },
-};
-
-/* ======================
-   OSM MAP
-====================== */
 
 function OSMMap({ lat, lng, height = 140 }) {
+  const isOnline = useOnlineStatus();
+
   if (!lat || !lng) return null;
+
+  if (!isOnline) {
+    return (
+      <div className="mt-2 p-2 bg-gray-200 rounded text-xs">
+        📍 Offline — showing raw coordinates
+        <br />
+        Lat: {lat}, Lng: {lng}
+      </div>
+    );
+  }
 
   const src = `https://www.openstreetmap.org/export/embed.html?bbox=${
     lng - 0.01
@@ -98,6 +33,136 @@ function OSMMap({ lat, lng, height = 140 }) {
     />
   );
 }
+
+
+/* ======================
+   DEMO JWT UTILS
+====================== */
+
+const JWT_KEY = "auth_jwt";
+const JWT_SECRET = "demo-secret"; // hardcoded demo secret
+
+function base64Encode(obj) {
+  return btoa(JSON.stringify(obj));
+}
+
+function base64Decode(str) {
+  return JSON.parse(atob(str));
+}
+
+function sign(payloadBase64) {
+  return btoa(payloadBase64 + JWT_SECRET);
+}
+
+function createJWT(payload) {
+  const header = { alg: "HS256", typ: "JWT" };
+
+  const encodedHeader = base64Encode(header);
+  const encodedPayload = base64Encode(payload);
+
+  const signature = sign(encodedPayload);
+
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+function verifyJWT(token) {
+  try {
+    const [headerB64, payloadB64, signature] = token.split(".");
+    if (sign(payloadB64) !== signature) return null;
+
+    const payload = base64Decode(payloadB64);
+    if (payload.exp < Date.now()) return null;
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+
+/* ======================
+   CONSTANTS
+====================== */
+
+const STORAGE_KEY = "sos_messages";
+
+/* ======================
+   SOS TEMPLATES
+====================== */
+
+const SOS_TEMPLATES = [
+  {
+    label: "Medical Emergency",
+    text:
+      "Medical emergency reported. The individual requires urgent hospital assistance and immediate ambulance support.",
+  },
+  {
+    label: "Fire Accident",
+    text:
+      "Fire accident reported. There is an active fire causing immediate danger to life and property. Emergency fire services are required urgently.",
+  },
+
+  {
+    label: "Sexual Assault",
+    text:
+      "Sexual assault emergency. Immediate assistance required. Victim is unsafe and needs urgent police and medical intervention.",
+  },
+  {
+    label: "Natural Disaster",
+    text:
+      "Natural disaster situation detected (flood, earthquake, or cyclone). People may be trapped or injured. Immediate rescue and relief are required.",
+  },
+];
+const DEFAULT_SOS = SOS_TEMPLATES[0].text;
+/* ======================
+   SERVICES
+====================== */
+
+const Services = {
+    login(mobile, password) {
+      const payload = {
+        mobile,
+        iat: Date.now(),
+        exp: Date.now() + 1000 * 60 * 60 * 6, // 6 hours
+      };
+
+      const token = createJWT(payload);
+      localStorage.setItem(JWT_KEY, token);
+    },
+
+    logout() {
+      localStorage.removeItem(JWT_KEY);
+    },
+
+    getUser() {
+      const token = localStorage.getItem(JWT_KEY);
+      if (!token) return null;
+
+      return verifyJWT(token);
+    },
+
+    isAuthenticated() {
+      return !!this.getUser();
+    },
+
+    getLocation() {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) =>
+            resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            }),
+          () => reject()
+        );
+      });
+    }
+};
+
+/* ======================
+   OSM MAP
+====================== */
+
 
 /* ======================
    IPHONE SHELL
@@ -123,20 +188,37 @@ function IPhoneShell({ children }) {
    MAIN APP
 ====================== */
 
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  return isOnline;
+}
+
+
 export default function Home() {
+
   const [loggedIn, setLoggedIn] = useState(false);
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [messages, setMessages] = useState([]);
   const [sosMessage, setSosMessage] = useState("");
   const [customMessage, setCustomMessage] = useState("");
-
-  useEffect(() => {
-    setLoggedIn(localStorage.getItem("auth") === "true");
-    loadMessages();
-    const id = setInterval(loadMessages, 2000);
-    return () => clearInterval(id);
-  }, []);
+  const [selectedSOS, setSelectedSOS] = useState(SOS_TEMPLATES[0].label);
 
   function loadMessages() {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
@@ -153,7 +235,7 @@ export default function Home() {
       id: crypto.randomUUID(),
       user_mobile: user.mobile,
       message: sosMessage,
-      optional_message: customMessage || null,
+      optional_message: customMessage || `Auto-generated alert at ${new Date().toLocaleString()}`,
       location,
       time: new Date().toISOString(),
       acknowledged: false,
@@ -177,6 +259,23 @@ export default function Home() {
   }
 
   const user = Services.getUser();
+
+  useEffect(() => {
+    setLoggedIn(Services.isAuthenticated());
+    loadMessages();
+
+    const defaultTemplate = SOS_TEMPLATES[0];
+
+    setSelectedSOS(defaultTemplate.label);
+    setSosMessage(defaultTemplate.text);
+
+    // ✅ Prefill here too
+    setCustomMessage(defaultTemplate.text);
+
+    const id = setInterval(loadMessages, 2000);
+    return () => clearInterval(id);
+  }, []);
+
 
   return (
     <main className="h-screen flex items-center justify-center bg-gray-300">
@@ -204,18 +303,10 @@ export default function Home() {
               <button
                 className="bg-black text-white py-2 rounded"
                 onClick={() => {
-                  const existing = Services.getUser();
-                  if (existing) {
-                    if (!Services.verify(mobile, password)) {
-                      alert("Invalid credentials");
-                      return;
-                    }
-                  } else {
-                    Services.login(mobile, password);
-                  }
-                  localStorage.setItem("auth", "true");
+                  Services.login(mobile, password);
                   setLoggedIn(true);
                 }}
+
               >
                 Login
               </button>
@@ -224,22 +315,27 @@ export default function Home() {
             <>
               <select
                 className="border p-2 rounded text-sm"
+                value={selectedSOS}
                 onChange={(e) => {
-                  const t = SOS_TEMPLATES.find(
+                  const selected = SOS_TEMPLATES.find(
                     (x) => x.label === e.target.value
                   );
-                  setSosMessage(t?.text || "");
+
+                  setSelectedSOS(e.target.value);
+                  setSosMessage(selected?.text || "");
+                  setCustomMessage(selected?.text || "");
                 }}
               >
-                <option value="">Select SOS Type</option>
                 {SOS_TEMPLATES.map((t) => (
-                  <option key={t.label}>{t.label}</option>
+                  <option key={t.label} value={t.label}>
+                    {t.label}
+                  </option>
                 ))}
               </select>
 
               <textarea
                 className="border p-2 rounded mt-2 text-sm"
-                rows={3}
+                rows={5}
                 placeholder="Optional details"
                 value={customMessage}
                 onChange={(e) => setCustomMessage(e.target.value)}

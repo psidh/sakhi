@@ -4,12 +4,50 @@ import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "sos_messages";
 
+
+
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  return isOnline;
+}
+
+
+
 /* ======================
    OSM MAP
 ====================== */
 
 function OSMMap({ lat, lng, height = 220 }) {
+  const isOnline = useOnlineStatus();
+
   if (!lat || !lng) return null;
+
+  // OFFLINE fallback
+  if (!isOnline) {
+    return (
+      <div className="mt-3 p-3 bg-gray-200 rounded text-sm">
+        📍 Location unavailable (offline)
+        <br />
+        Lat: {lat}, Lng: {lng}
+      </div>
+    );
+  }
 
   const src = `https://www.openstreetmap.org/export/embed.html?bbox=${
     lng - 0.01
@@ -31,6 +69,7 @@ function OSMMap({ lat, lng, height = 220 }) {
 ====================== */
 
 export default function DepartmentPage() {
+
   const [messages, setMessages] = useState([]);
 
   // HARD-CODED department location (demo)
